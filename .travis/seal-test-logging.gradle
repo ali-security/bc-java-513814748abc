@@ -1,0 +1,21 @@
+// Print per-test results and a per-task summary so the Travis log states how many tests ran.
+// core's SimpleTestTest drives every regression test in one JVM and needs more than the
+// default 512m test-fork heap.
+allprojects {
+    tasks.withType(Test) { t ->
+        t.maxHeapSize = '3g'
+        t.testLogging {
+            events 'passed', 'skipped', 'failed'
+            exceptionFormat 'full'
+        }
+        t.afterSuite { desc, result ->
+            if (desc.parent == null) {
+                println("TEST SUMMARY " + t.path + ": " + result.resultType +
+                        " tests=" + result.testCount +
+                        " passed=" + result.successfulTestCount +
+                        " failed=" + result.failedTestCount +
+                        " skipped=" + result.skippedTestCount)
+            }
+        }
+    }
+}

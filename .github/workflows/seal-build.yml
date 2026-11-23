@@ -1,0 +1,62 @@
+name: seal-build
+
+# Build-and-pack only: the test suite runs on Travis (.travis.yml).
+# The public bcpkix-jdk15on-1.68.jar was compiled by JDK 8u275 (Originally-Created-By 25.275-b01)
+# with the project's Ant build (build15+ -> ant/jdk15+.xml build-provider + build), then
+# add_module.sh pkix grafted META-INF/versions/9/module-info.class with JDK 9/11. The version
+# patch points add_module.sh/jar_process.sh at /opt/java/jdk-9+181 and /opt/java/jdk-11.0.11+9.
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install JDK 8u275, JDK 9+181, JDK 11.0.11 and Ant 1.10.14
+        run: |
+          set -euo pipefail
+          sudo mkdir -p /opt/java && sudo chown "$USER" /opt/java
+          cd "$RUNNER_TEMP"
+          curl -fsSL -o jdk8.tar.gz https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/jdk8u275-b01/OpenJDK8U-jdk_x64_linux_hotspot_8u275b01.tar.gz
+          mkdir -p /opt/java/jdk8u275-b01 && tar -xzf jdk8.tar.gz -C /opt/java/jdk8u275-b01 --strip-components=1
+          curl -fsSL -o jdk9.tar.gz https://github.com/AdoptOpenJDK/openjdk9-binaries/releases/download/jdk-9%2B181/OpenJDK9U-jdk_x64_linux_hotspot_9_181.tar.gz
+          mkdir -p /opt/java/jdk-9+181 && tar -xzf jdk9.tar.gz -C /opt/java/jdk-9+181 --strip-components=2
+          curl -fsSL -o jdk11.tar.gz https://github.com/AdoptOpenJDK/openjdk11-binaries/releases/download/jdk-11.0.11%2B9/OpenJDK11U-jdk_x64_linux_hotspot_11.0.11_9.tar.gz
+          mkdir -p /opt/java/jdk-11.0.11+9 && tar -xzf jdk11.tar.gz -C /opt/java/jdk-11.0.11+9 --strip-components=1
+          curl -fsSL -o ant.tar.gz https://archive.apache.org/dist/ant/binaries/apache-ant-1.10.14-bin.tar.gz
+          tar -xzf ant.tar.gz
+          /opt/java/jdk8u275-b01/bin/java -version
+          /opt/java/jdk-9+181/bin/javac -version
+          /opt/java/jdk-11.0.11+9/bin/jar --version
+          echo "ANT_HOME=$RUNNER_TEMP/apache-ant-1.10.14" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/apache-ant-1.10.14/bin" >> "$GITHUB_PATH"
+
+      - name: Build jars (build15+)
+        env:
+          JDKPATH: /opt/java/jdk8u275-b01
+          ANT_OPTS: -Xmx2g
+        run: |
+          set -euo pipefail
+          sh ./build15+
+          ls -l build/artifacts/jdk1.5/jars/
+          test -f build/artifacts/jdk1.5/jars/bcpkix-jdk15on-168.jar
+
+      - name: Graft JDK 9 module-info (add_module.sh pkix)
+        run: |
+          set -euo pipefail
+          sh ./add_module.sh pkix
+          mkdir -p seal-out
+          cp build/artifacts/jdk1.5/jars/bcpkix-jdk15on-168.jar seal-out/bcpkix-jdk15on-1.68.jar
+          unzip -l seal-out/bcpkix-jdk15on-1.68.jar > seal-out/listing.txt
+          grep -q 'META-INF/versions/9/module-info.class' seal-out/listing.txt
+          tail -1 seal-out/listing.txt
+          rm seal-out/listing.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bcpkix-jdk15on-1.68
+          path: seal-out/bcpkix-jdk15on-1.68.jar
+          if-no-files-found: error

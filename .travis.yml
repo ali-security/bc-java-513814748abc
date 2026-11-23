@@ -1,3 +1,36 @@
-language: java
-jdk:
-  - openjdk8
+language: shell
+dist: jammy
+
+# The project ships build.gradle in Gradle 6 syntax (compile/testCompile, removed in Gradle 7)
+# and no wrapper, so a current image's system Gradle cannot run it; install the JDK 8u275
+# (the JDK the published 1.68 jars were built with) + Gradle 6.9.4 toolchain explicitly and
+# run the project's own test definition (subprojects' `AllTest*` filter), one module group
+# per job so each job stays well under Travis's time limit.
+env:
+  jobs:
+    - TEST_TASKS=":pkix:test"
+    - TEST_TASKS=":core:test"
+    - TEST_TASKS=":prov:test"
+    - TEST_TASKS=":tls:test"
+    - TEST_TASKS=":mail:test :pg:test :test:test"
+
+before_install:
+  - curl -fsSL -o /tmp/jdk8.tar.gz https://github.com/AdoptOpenJDK/openjdk8-binaries/releases/download/jdk8u275-b01/OpenJDK8U-jdk_x64_linux_hotspot_8u275b01.tar.gz
+  - mkdir -p $HOME/jdk8 && tar -xzf /tmp/jdk8.tar.gz -C $HOME/jdk8 --strip-components=1
+  - export JAVA_HOME=$HOME/jdk8
+  - curl -fsSL -o /tmp/gradle.zip https://services.gradle.org/distributions/gradle-6.9.4-bin.zip
+  - unzip -q /tmp/gradle.zip -d $HOME
+  - export PATH=$JAVA_HOME/bin:$HOME/gradle-6.9.4/bin:$PATH
+  - java -version
+  - gradle --version
+
+install: true
+
+before_script:
+  - (while sleep 240; do echo "keepalive - tests still running"; done) &
+
+script:
+  - gradle --no-daemon --console=plain -s --continue --init-script .travis/seal-test-logging.gradle $TEST_TASKS
+
+after_script:
+  - sh .travis/wait-for-log.sh gradle 1800
